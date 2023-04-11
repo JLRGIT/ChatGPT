@@ -1,0 +1,869 @@
+// ####################################
+// ### CSV Exporter JLR			    ###
+// ### v1.4: Kenan Kaplan           ###
+// ####################################
+
+arg testresultname
+
+
+// CSV file config Main 
+
+Separator = "," // Choose the Seperator you want to use in your CSv File 
+ 
+Resolution = 1 // Leave it at 1 handling is now done elsewere, Cleanup in the future
+ 
+DecimalPlaces = 10 // number of the Decimal places writen in the CSV File 
+
+firstchanneldecimalplaces = 1 // set how much decima places you want to have for the 1 Channel
+
+AdditionalInfos = "Cycle: " //here you can write additional Infos in the 2 Row of the CSV file 
+ 
+Writingthechanllename = 0 // decide if you want the name of the cahnnel at the 3 row of the csv File 
+
+Unitsfromtheexcel = 1 // Must be 1, change of implementation, leftoverm Cleanup in the future
+
+ConvertUnits = 0 // With this variable you can decide, if you want to automatically swith the units or if you want the units which are saved in the atfx 
+
+Locationtosave = "E:\TestData" //store location of the CSV file  
+
+Useallvalues = 0 // Use all values from the Recorder or only the values from starting the SSQ (Waring for this the EMA_SSQCyclePosition have to be in the first row of the file!) 
+
+firstrows = 0 // the first rows in the CSV file only usable with useallvalues = 0
+
+endvaluescleanup = 1 // clean up all the values after the test finished 
+
+usefolder = 0 // creating a folder structure for each Project 
+
+
+// Coefitions to converte Units
+
+valueconvert_km_to_miles = 0.621371
+valueconvert_m_to_miles = 0.000621371
+valueconvert_kmh_to_mph = 0.621371
+valueconvert_ms_to_mph = 2.223694
+valueconvert_mbar_to_kPA = 0.1
+valueconvert_mbar_to_hPA = 1
+valueconvert_hPA_to_mbar = 1
+valueconvert_kPA_to_mbar = 10
+valueconvert_hPA_to_kPA = 0.1
+valueconvert_kPA_to_hPA = 10
+valueconvert_hPA_to_inH2O =	0.401865
+valueconvert_kPA_to_inH2O = 4.01865
+valueconvert_mbar_to_inH2O = 0.401865
+valueconvert_inH2O_to_mbar = 2.4884
+valueconvert_inH2O_to_hPA = 2.4884
+valueconvert_inH2O_to_kPA =0.24884
+valueconvert_ppm_to_perc =  10000
+valueconvert_perc_to_ppm = 0.0001
+valueconvert_C_to_K = 273.15
+valueconvert_K_to_C = 273.15
+valueconvert_m_to_km = 0.001
+valueconvert_km_to_m = 1000
+valueconvert_m2min_to_m2s = 60
+valueconvert_m2s_to_m2min = 0.16666667
+valueconvert_m3min_to_m3s = 60
+valueconvert_m3s_to_m3min = 0.16666667
+
+
+// Debug
+/*
+//testresultname			= "My ATF Files\ETC_153561_80_kW_18122015_2_1_967.ATF"
+//Separator				= ";"
+//Resolution				= 10
+//DecimalPlaces			= 10
+*/
+// Debug end
+
+
+
+// Open Testresult
+
+DE = GetDataExplorer()
+oFiles = DE.GetOpenFiles()
+AliasName = ""
+for Index = 1 to nPoints(oFiles)
+	n = oFiles[Index].FileName
+	if n = testresultname then
+		AliasName = oFiles[Index].Alias
+		break
+	endif
+next
+if AliasName = "" then
+	AliasName = LoadFile(testresultname)
+endif
+//File = SelFile(testresultname)
+//File.Open()
+//AliasName = File.Alias()
+//AliasName = "ASAMFILE1"
+
+// Configure the test name 
+
+Testname = AliasName+":BasicTestInformation'Test_ResultName"
+Nameofthetest = DS(Testname.y[1])
+
+Testresult = AliasName+":BasicTestInformation'Test_SeriesName"
+Nameoftheresults = DS(Testresult.y[1])
+
+// Check if you have to make a folder or not 
+if usefolder = 1 then 
+if GetApplication().FolderExists(Locationtosave+Nameoftheresults) then
+else
+GetApplication().CreateFolder(Locationtosave+Nameoftheresults)
+endif
+else
+endif
+
+// Default initialisation if not selected on the top 
+if Separator.Count = 0 then Separator = ";"
+if Resolution.Count = 0 then Resolution = 10
+if DecimalPlaces.Count = 0 then DecimalPlaces = 10
+
+TraceInfo("CSV Exporter started. Testresult: " + testresultname + " - Separator: '" + Separator)
+
+// Get start time
+Timestamp = StrTokenize(GlobalVar("$TIME"), ":")
+StartTime = CReal(Timestamp.y[1])*3600 + CReal(Timestamp.y[2])*60 + CReal(Timestamp.y[3])
+
+
+//reading the naiming file from the Config Folder
+//WriteLn(naimingfile,testresultname,0)
+
+// Get storage filepath ( if folder used or not ) 
+if usefolder = 1 then 
+CsvFilePath = Locationtosave+Nameoftheresults+"\"+Nameofthetest+" 1Hz"+".csv"
+else
+CsvFilePath = Locationtosave+"\"+Nameofthetest+" 1Hz"+".csv"
+endif
+
+
+// Deleting the old file (if there exist one)
+App = GetApplication()
+App.DeleteFile(CsvFilePath)
+
+// Decalring the file path for the Config files 
+if StrSearch(CsvFilePath, ".csv") = 0 then  CsvFilePath = CsvFilePath+".csv"
+	TraceInfo("CSV filepath: " + CsvFilePath)
+	
+	AVlQuantities = ("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\AVLQuantities.txt")
+	Unitfile = ("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\Units.txt")
+	Commandfile = ("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\comments.txt")
+	Recorderfile = ("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\recorder.txt")
+
+
+// Cheking if the cofig file is Present
+	if GetApplication().FileExists("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\AVLQuantities.txt")= 0 then
+	TraceError("No AVlQuantities Found ")
+	else 
+	endif
+	if GetApplication().FileExists("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\Units.txt")= 0 then
+	TraceError("No Unitfile Found ")
+	else 
+	endif
+	if GetApplication().FileExists("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\recorder.txt")= 0 then
+	TraceError("No recorderfile Found ")
+	else 
+	endif
+	if GetApplication().FileExists("D:\AVL\applications\ema\dataprocessing_cus\Scripts\ema_data_explorer_menu_extentions\Test\CSV Config Files\comments.txt")= 0 then
+	TraceError("No commentsfile Found ")
+	else 
+	endif
+
+//Get Channels from the Config File
+linecounter = ReadLn(AVlQuantities, 0)
+
+
+// Define channel list
+ChannelNames = New(0,"")
+
+Channelunvalid = ""
+
+Channels =0
+
+Recorder = 0
+
+j=2
+
+
+// Get channel names and recorder
+for i = 1 to linecounter
+
+	// Get channel names
+	
+	Channels = ReadLn(AVlQuantities, j)
+	Channelun = Channels
+	Recorder = ReadLn(Recorderfile, i)
+	// Building the Name of the Recorder and the noramname 
+	Channels =( AliasName + ":" +Recorder + "'" + Channels)
+	ChannelNames = Append(ChannelNames, Channels)
+	Channelunvalid = Append(Channelunvalid, Channelun)
+	j=j+1
+next i
+
+
+
+// get Channel units 
+ChannelUnitsall = New("","")
+ChannelUnitsConcerto = New("","")
+Units =0
+
+// Get units names in case that the Unit in the Excel is different than in concerto
+
+if Unitsfromtheexcel = 1 then
+
+	for i = 1 to linecounter
+		Units = ReadLn(Unitfile, i)
+		ChannelUnitsall = Append(ChannelUnitsall, Units)
+	next i
+else 
+endif
+
+
+
+// get Comments from the Excel file 
+Channelcomments = New("","")
+comments =0 
+for i = 1 to linecounter
+	comments = ReadLn(Commandfile, i) 
+	Channelcomments = Append(Channelcomments, comments)
+next i
+
+
+// Reduce channel values to defined resolution
+MaxCount = 0
+ReducedValues = NewDsArray(1,0)
+ValueValid = New("","")
+for i = 1 to ChannelNames.Count
+	Values = DS(ChannelNames.y[i])
+	if (Values.Count > 0) then
+		// Create bool dataset which holds the indicators to extract from original dataset
+		BoolDs = New(Values.Count, 0)
+		BoolDs.y[1] = 1
+		for j = 2 to BoolDs.Count
+			if ( j % Resolution ) =  0 then
+				BoolDs.y[j] = 1
+		endif
+		next j
+		ReducedChannel = Reduce(Values, BoolDs)
+		ReducedValues.AddColumn(ChannelNames.y[i])
+		ReducedValues.PutCell(ReducedChannel, 1, ReducedValues.ColCount)
+		
+		// Check if the units used ferom excel or not 
+		if Unitsfromtheexcel = 0 then
+		ChannelUnitsall = Append(ChannelUnitsall,Values.Unit)
+		else
+		ChannelUnitsConcerto = Append(ChannelUnitsConcerto,Values.Unit)
+		endif
+  
+		if i = 1 and MaxCount < ReducedChannel.Count then
+		MaxCount = ReducedChannel.Count
+		endif
+
+	endif
+	
+next i
+
+
+
+		
+// checking if channels have to be left out ( in case of invalid Channels deleting them )
+//this is done by checking if the name of the Chennel is there or not 
+Chanelwriting = New("","")
+j=1            
+writecomment = 1 
+notwritecomment = 0 
+
+for i= 2 to linecounter
+
+	// DEBUG:
+	/*
+	columns = ReducedValues.ColCount
+ 	chn_name = ReducedValues.GetCell(1, j).Name
+ 	inv_name = Channelunvalid.y[i]
+	*/
+ 
+	if j <= ReducedValues.ColCount then
+		if ReducedValues.GetCell(1, j).Name = Channelunvalid.y[i] then 
+			Chanelwriting = Append(Chanelwriting, writecomment)
+			j = j +1
+		else 
+			Chanelwriting = Append(Chanelwriting, notwritecomment)
+		endif
+	else
+		Chanelwriting = Append(Chanelwriting, notwritecomment)
+	endif
+next i
+
+Chanelwriting = Append(Chanelwriting, notwritecomment)	
+
+ChannelUnits = New("","")
+
+
+for i= 1 to linecounter 
+
+if Chanelwriting.y[i] = 1 then 
+ChannelUnits = Append(ChannelUnits,ChannelUnitsall.y[i])
+else
+endif
+next i
+
+
+// define which Unit is Converted to which unit 	
+
+if ConvertUnits = 1 then
+Channelstoconvert = New("","")
+UseConcertoNativUnit = 0
+mstomph=1
+kmhtomph=2
+mtomiles=3
+kmtomiles=4
+kpatoinH2O=5
+mbartoinH2O=6
+hpatoinH2O=7
+inH2Otokpa=8
+mbartokpa=9
+hpatokpa=10
+inH2Otohpa=11
+mbartohpa=12
+kpatohpa=13
+inH2Otombar=14
+hpatombar=15
+kpatombar=16
+ppmtoperc=17
+perctoppm= 18
+CtoK =19
+ktoC=20
+mtokm=21
+kmtom=22
+m2mintom2s=23
+m2stom2min = 24
+
+
+//Checking if Unit is km/h km or miles/h to convert in the Programm 
+			ChannelNamescycle = AliasName+":ExtendedCycleData'CycleName"
+			ChannelNamesus = AliasName+":ExtendedCycleData'Region"
+			ChannelNamesLimit = AliasName+":EmissionLimitData'LimitDescription"
+			newusvariable = DS(ChannelNamesus.y[1])
+			newcyclevariable = DS(ChannelNamescycle.y[1])
+			newlegislationvariable = DS(ChannelNamesLimit.y[1])
+			Alltogether = newcyclevariable.y[1]
+			//TraceInfo("US Value "+ newusvariable)
+			
+			
+
+			
+	for i = 1 to ChannelUnitsConcerto.count
+	
+
+		Chnannelforselction = UseConcertoNativUnit
+		
+		
+		select ChannelUnits.y[i]
+			case "mph"
+				
+				if newusvariable.y[1]="US" then
+					if ChannelUnitsConcerto.y[i]= "m/s" then
+					Chnannelforselction = mstomph
+					else
+					endif
+					if ChannelUnitsConcerto.y[i]= "km/h" then
+					Chnannelforselction =  kmhtomph
+					else
+					endif
+				else
+				endif
+			case "miles"
+				if newusvariable.y[1] = "US" then
+					if ChannelUnitsConcerto.y[i]= "m" then
+					Chnannelforselction =  mtomiles
+					else
+					endif
+					if ChannelUnitsConcerto.y[i]= "km" then
+					Chnannelforselction = kmtomiles
+					else
+					endif
+				else
+				endif	
+				
+			case "inH2O"	
+			
+					if ChannelUnitsConcerto.y[i]= "kPa" then
+					Chnannelforselction = kpatoinH2O
+					else
+					endif
+					if ChannelUnitsConcerto.y[i]= "mbar" then
+					Chnannelforselction = mbartoinH2O
+					else
+					endif					
+					if ChannelUnitsConcerto.y[i]= "hPa" then
+					Chnannelforselction = hpatoinH2O
+					else
+					endif
+				
+			case "kPa"	
+			
+					if ChannelUnitsConcerto.y[i]= "inH2O" then
+					Chnannelforselction = inH2Otokpa
+					else
+					endif
+					if ChannelUnitsConcerto.y[i]= "mbar" then
+					Chnannelforselction = mbartokpa
+					else
+					endif					
+					if ChannelUnitsConcerto.y[i]= "hPa" then
+					Chnannelforselction = hpatokpa
+					else
+					endif
+					
+			case "hPa"	
+			
+					if ChannelUnitsConcerto.y[i]= "inH2O" then
+					Chnannelforselction = inH2Otohpa
+					else
+					endif
+					if ChannelUnitsConcerto.y[i]= "mbar" then
+					Chnannelforselction = mbartohpa
+					else
+					endif					
+					if ChannelUnitsConcerto.y[i]= "kPa" then
+					Chnannelforselction = kpatohpa
+					else
+					endif
+					
+			case "mbar"	
+			
+					if ChannelUnitsConcerto.y[i]= "inH2O" then
+					Chnannelforselction = inH2Otombar
+					else
+					endif
+					if ChannelUnitsConcerto.y[i]= "hpa" then
+					Chnannelforselction = hpatombar
+					else
+					endif					
+					if ChannelUnitsConcerto.y[i]= "kPa" then
+					Chnannelforselction = kpatombar
+					else
+					endif
+						
+
+			case "ppm"
+					if ChannelUnitsConcerto.y[i]= "%" then
+					Chnannelforselction = ppmtoperc
+					else
+					endif	
+
+			case "%"
+					if ChannelUnitsConcerto.y[i]= "ppm" then
+					Chnannelforselction = perctoppm
+					else
+					endif	
+				
+
+			case "K"
+					if ChannelUnitsConcerto.y[i]= "C" then
+					Chnannelforselction = ktoC
+					else
+					endif	
+
+			case "C"
+					if ChannelUnitsConcerto.y[i]= "K" then
+					Chnannelforselction = CtoK
+					else
+					endif
+				
+				
+			case "m3/min"
+					if ChannelUnitsConcerto.y[i]= "m3/s" then 
+					Chnannelforselction = m2mintom2s
+					else
+					endif	
+			case "m3/s"
+					if ChannelUnitsConcerto.y[i]= "m3/min" then
+					Chnannelforselction = m2stom2min
+					else
+					endif	
+				
+				
+			else
+	
+			
+		endselect	
+		
+		Channelstoconvert = Append(Channelstoconvert,Chnannelforselction)
+	next i
+else 
+Channelstoconvert = New("","")
+ChannelNamescycle = AliasName+":ExtendedCycleData'CycleName"
+newcyclevariable = DS(ChannelNamescycle.y[1])
+Alltogether = newcyclevariable.y[1]
+					  
+endif
+
+
+
+// Write csv file with the above defined name
+																									 							   
+
+				 
+TraceInfo("Please wait - this may take some time...")
+AdditionalInfos = "Cycle: "+Alltogether
+
+//Writing the header 
+
+WriteLn(CsvFilePath, testresultname, 0)
+WriteLn(CsvFilePath, AdditionalInfos, 1)
+
+
+// option to switch off the Channel name 
+if Writingthechanllename = 1 then
+TextToWrite = ""
+
+for i = 1 to ReducedValues.ColCount
+	TextToWrite = TextToWrite + ReducedValues.GetCell(1, i).Name + Separator
+next i
+WriteLn(CsvFilePath, TextToWrite, 1)
+else
+
+endif
+
+
+// Write comments
+
+TextToWrite = ""
+for i = 1 to linecounter
+	if Chanelwriting.y[i] = 1 then
+	TextToWrite = TextToWrite + Channelcomments.y[i] + Separator	
+	else 
+	endif
+next i
+WriteLn(CsvFilePath, TextToWrite, 1)
+
+
+
+
+// Write units
+// Checking if the Unit is Converted or if the Concerto unit have to be taken 
+TextToWrite = ""
+for i = 1 to ChannelUnitsConcerto.Count
+
+if Unitsfromtheexcel = 1 and ConvertUnits = 1 then
+	if Channelstoconvert.y[i] = 0 then
+	TextToWrite = TextToWrite + ChannelUnitsConcerto.y[i] + Separator
+	else
+	TextToWrite = TextToWrite + ChannelUnits.y[i] + Separator
+	endif
+elseif Unitsfromtheexcel = 1 and ConvertUnits = 0 then
+	Channelstoconvert = Append(Channelstoconvert,0)												
+	TextToWrite = TextToWrite + ChannelUnitsConcerto.y[i] + Separator
+endif
+	
+next i
+WriteLn(CsvFilePath, TextToWrite, 1)
+
+// To only get the values starting with the first secound of the testrun
+if Useallvalues = 0 or Useallvalues = 1 then
+	l = 0                   
+	m = 0
+	
+	for k=1 to MaxCount
+		if m =0 then	
+			DSValues = ReducedValues.GetCell(1, 1)
+				if DSValues.y[k] = 0 then
+
+				l=l+1
+
+				else
+				m = 1
+				endif
+				
+		else
+		endif
+	next k
+	
+else 
+	l = 1
+	endif
+	l = l + 1
+
+if endvaluescleanup =1 then
+
+	h = l+100
+	f = h
+	stopvalue = h
+
+	n = 0
+
+		for k=h to MaxCount
+			o = MaxCount
+				if n =0 then	
+					u = k - 1
+					DSValues = ReducedValues.GetCell(1, 1)
+				if DSValues.y[u] = DSValues.y[o] then
+		   	n = 1
+		 
+	  
+		   
+		  
+				else
+					f=f+1
+				endif
+		else
+		endif
+		next k
+
+				 
+
+IsHybridFlag = ASAMFILE1:front_em'hybrid_eot_type
+	
+	if IsHybridFlag > 0  then
+		IsHybrid = 1
+	else
+		IsHybrid = 0
+	endif
+	
+	if IsHybrid > 0 then
+	stopvalue = MaxCount //Hybrid Test
+	else
+		stopvalue = f-2 //Emission Test
+	endif
+
+
+n=0
+q =stopvalue
+for k=f to MaxCount
+		if n =0 then	
+			DSValues = ReducedValues.GetCell(1, 5)
+				if DSValues.y[k] = 0 then
+				n = 1
+				else
+				q=q+1
+				endif
+		else
+		endif
+	next k
+	
+if IsHybrid > 0 then
+	stopvalue = q    //Hybrid Test
+	else
+		stopvalue = q +2 //Emission Test
+	endif
+
+else 
+stopvalue = k
+endif
+
+
+
+
+// write values 
+ 
+if Useallvalues = 0 then
+
+ for h = 1 to firstrows  // for the first 10 rows on the report 
+	TextToWrite = ""
+	for j=1 to stopvalue
+	 
+	
+		DSValues = ReducedValues.GetCell(1, j)
+		
+		if (DSValues.Count >= h) then
+			
+			
+			
+			if j=1 then 
+			
+				TextToWrite = TextToWrite + CStr(DSValues.y[h], "0." + firstchanneldecimalplaces) + Separator //to round the first row to 1 instead of 0.889
+				
+			else
+			
+			
+					select Channelstoconvert.y[j]
+					case "1"
+					TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_ms_to_mph, "0." + DecimalPlaces) + Separator
+						case "2"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_kmh_to_mph, "0." + DecimalPlaces) + Separator
+						case "3"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_m_to_miles, "0." + DecimalPlaces) + Separator
+						case "4"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_km_to_miles, "0." + DecimalPlaces) + Separator
+						case "5"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_kPA_to_inH2O, "0." + DecimalPlaces) + Separator
+						case "6"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_inH2O_to_mbar, "0." + DecimalPlaces) + Separator
+						case "7"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_inH2O_to_hPA, "0." + DecimalPlaces) + Separator
+						case "8"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_inH2O_to_kPA, "0." + DecimalPlaces) + Separator
+						case "9"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_kPA_to_mbar, "0." + DecimalPlaces) + Separator
+						case "10"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_kPA_to_hPA, "0." + DecimalPlaces) + Separator
+						case "11"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_hPA_to_inH2O, "0." + DecimalPlaces) + Separator
+						case "12"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_hPA_to_mbar, "0." + DecimalPlaces) + Separator
+						case "13"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_hPA_to_kPA, "0." + DecimalPlaces) + Separator
+						case "14"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_mbar_to_inH2O, "0." + DecimalPlaces) + Separator
+						case "15"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_mbar_to_hPA, "0." + DecimalPlaces) + Separator
+						case "16"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_mbar_to_kPA, "0." + DecimalPlaces) + Separator
+						case "17"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_ppm_to_perc, "0." + DecimalPlaces) + Separator
+						case "18"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_perc_to_ppm, "0." + DecimalPlaces) + Separator
+						case "19"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] - valueconvert_C_to_K, "0." + DecimalPlaces) + Separator
+						case "20"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] + valueconvert_K_to_C, "0." + DecimalPlaces) + Separator
+						case "21"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_m_to_km, "0." + DecimalPlaces) + Separator
+						case "22"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_km_to_m, "0." + DecimalPlaces) + Separator
+						case "23"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_m2min_to_m2s, "0." + DecimalPlaces) + Separator
+						case "24"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_m2s_to_m2min, "0." + DecimalPlaces) + Separator
+						case "25"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_m3min_to_m3s, "0." + DecimalPlaces) + Separator
+						case "26"
+						TextToWrite = TextToWrite + CStr(DSValues.y[h] * valueconvert_m3s_to_m3min, "0." + DecimalPlaces) + Separator
+						else
+						TextToWrite = TextToWrite + CStr(DSValues.y[h], "0." + DecimalPlaces) + Separator
+					endselect
+
+				
+			
+				
+			endif
+		else
+			TextToWrite = TextToWrite + Separator
+		endif
+		
+	next j
+
+	if h = 10 then 
+	TextToWrite = ""
+	endif
+	
+	// Write line
+	WriteLn(CsvFilePath, TextToWrite, 1)
+	next h
+	else 
+	endif
+ t=0
+ resolutionfor10hz = 10
+ 
+for i=l  to stopvalue
+
+
+	TextToWrite = ""
+	if resolutionfor10hz = 10  then 
+		resolutionfor10hz = 1
+	
+	for j=1 to ReducedValues.ColCount
+	
+		DSValues = ReducedValues.GetCell(1, j)
+		
+		if (DSValues.Count >= i) then
+			
+		
+			
+			if j=1 then 
+				o = MaxCount
+				if DSValues.y[i] = DSValues.y[o] then
+				
+					
+					TextToWrite = TextToWrite + t  + Separator 
+			
+				else
+					t = (i - l)/10
+					TextToWrite = TextToWrite + t  + Separator
+				endif
+				
+			else
+					select Channelstoconvert.y[j]
+					case "1"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_ms_to_mph, "0." + DecimalPlaces) + Separator
+					case "2"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_kmh_to_mph, "0." + DecimalPlaces) + Separator
+					case "3"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_m_to_miles, "0." + DecimalPlaces) + Separator
+					case "4"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_km_to_miles, "0." + DecimalPlaces) + Separator
+					case "5"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_kPA_to_inH2O, "0." + DecimalPlaces) + Separator
+					case "6"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_inH2O_to_mbar, "0." + DecimalPlaces) + Separator
+					case "7"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_inH2O_to_hPA, "0." + DecimalPlaces) + Separator
+					case "8"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_inH2O_to_kPA, "0." + DecimalPlaces) + Separator
+					case "9"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_kPA_to_mbar, "0." + DecimalPlaces) + Separator
+					case "10"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_kPA_to_hPA, "0." + DecimalPlaces) + Separator
+					case "11"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_hPA_to_inH2O, "0." + DecimalPlaces) + Separator
+					case "12"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_hPA_to_mbar, "0." + DecimalPlaces) + Separator
+					case "13"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_hPA_to_kPA, "0." + DecimalPlaces) + Separator
+					case "14"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_mbar_to_inH2O, "0." + DecimalPlaces) + Separator
+					case "15"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_mbar_to_hPA, "0." + DecimalPlaces) + Separator
+					case "16"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_mbar_to_kPA, "0." + DecimalPlaces) + Separator
+					case "17"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_ppm_to_perc, "0." + DecimalPlaces) + Separator
+					case "18"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_perc_to_ppm, "0." + DecimalPlaces) + Separator
+					case "19"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] - valueconvert_C_to_K, "0." + DecimalPlaces) + Separator
+					case "20"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] + valueconvert_K_to_C, "0." + DecimalPlaces) + Separator
+					case "21"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_m_to_km, "0." + DecimalPlaces) + Separator
+					case "22"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_km_to_m, "0." + DecimalPlaces) + Separator
+					case "23"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_m2min_to_m2s, "0." + DecimalPlaces) + Separator
+					case "24"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_m2s_to_m2min, "0." + DecimalPlaces) + Separator
+					case "25"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_m3min_to_m3s, "0." + DecimalPlaces) + Separator
+					case "26"
+					TextToWrite = TextToWrite + CStr(DSValues.y[i] * valueconvert_m3s_to_m3min, "0." + DecimalPlaces) + Separator
+					else
+					TextToWrite = TextToWrite + CStr(DSValues.y[i], "0." + DecimalPlaces) + Separator
+					endselect
+				
+			endif
+		else
+
+			TextToWrite = TextToWrite + Separator
+		endif
+		
+	next j
+	// Write line
+WriteLn(CsvFilePath, TextToWrite, 1)
+
+	else 
+		resolutionfor10hz = resolutionfor10hz + 1 
+	endif
+	
+next i
+
+///////////////////////////////////////////////////////////////////////////////////
+//close the opend asam file
+
+	AliasName.Close()
+
+
+// Get end time
+Timestamp	= StrTokenize(GlobalVar("$TIME"), ":")
+EndTime		= CReal(Timestamp.y[1])*3600 + CReal(Timestamp.y[2])*60 + CReal(Timestamp.y[3])
+TraceInfo("CSV Export finished after " + CStr(EndTime - StartTime) + "s")
+
